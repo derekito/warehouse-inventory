@@ -4,9 +4,10 @@ import Layout from '@/components/layout/Layout';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { onAuthStateChange } from '@/lib/auth';
+import '@/lib/chartjs';
 
 // Pages that don't require authentication
-const publicPages = ['/auth/signin', '/auth/signup'];
+const publicPages = ['/login'];
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
@@ -17,7 +18,7 @@ export default function App({ Component, pageProps }: AppProps) {
       setIsLoading(false);
       
       if (!user && !publicPages.includes(router.pathname)) {
-        router.push('/auth/signin');
+        router.push('/login');
       }
     });
 

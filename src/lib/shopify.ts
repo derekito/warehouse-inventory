@@ -1,5 +1,7 @@
 import { createAdminApiClient } from '@shopify/admin-api-client';
 import { ShopifyInventoryUpdate, Product } from '../types';
+import crypto from 'crypto';
+import { NextApiRequest } from 'next';
 
 export type ShopifyStore = 'naked-armor' | 'grown-man-shave';
 
@@ -24,7 +26,7 @@ export type ProductWithShopify = Product & {
 const nakedArmorClient = createAdminApiClient({
   storeDomain: process.env.SHOPIFY_STORE_ONE_URL || '',
   accessToken: process.env.SHOPIFY_STORE_ONE_ACCESS_TOKEN || '',
-  apiVersion: '2025-01',
+  apiVersion: '2025-10',
   headers: {
     'Content-Type': 'application/json',
     'X-Shopify-Access-Token': process.env.SHOPIFY_STORE_ONE_ACCESS_TOKEN || ''
@@ -35,12 +37,31 @@ const nakedArmorClient = createAdminApiClient({
 const grownManShaveClient = createAdminApiClient({
   storeDomain: process.env.SHOPIFY_STORE_TWO_URL || '',
   accessToken: process.env.SHOPIFY_STORE_TWO_ACCESS_TOKEN || '',
-  apiVersion: '2025-01',
+  apiVersion: '2025-10',
   headers: {
     'Content-Type': 'application/json',
     'X-Shopify-Access-Token': process.env.SHOPIFY_STORE_TWO_ACCESS_TOKEN || ''
   }
 });
+
+// Helper function to normalize location ID to GID format
+function normalizeLocationId(locationId: string): string {
+  // If it's already a GID, return as-is
+  if (locationId.startsWith('gid://shopify/Location/')) {
+    return locationId;
+  }
+  // If it's just a number, convert to GID format
+  if (/^\d+$/.test(locationId)) {
+    return `gid://shopify/Location/${locationId}`;
+  }
+  // If it's already in some other format, try to extract the ID
+  const match = locationId.match(/(\d+)$/);
+  if (match) {
+    return `gid://shopify/Location/${match[1]}`;
+  }
+  // If we can't parse it, return as-is (might already be correct)
+  return locationId;
+}
 
 // Helper function to get the appropriate client based on store identifier
 function getClientForStore(storeIdentifier: ShopifyStore) {
@@ -55,7 +76,7 @@ function getClientForStore(storeIdentifier: ShopifyStore) {
     STORE_TWO_TOKEN: process.env.SHOPIFY_STORE_TWO_ACCESS_TOKEN ? 'Set' : 'Not Set',
     STORE_TWO_LOCATION: process.env.SHOPIFY_STORE_TWO_LOCATION_ID,
     NODE_ENV: process.env.NODE_ENV,
-    API_VERSION: '2025-01'
+    API_VERSION: '2025-10'
   });
 
   if (storeIdentifier === 'naked-armor') {
@@ -70,7 +91,7 @@ function getClientForStore(storeIdentifier: ShopifyStore) {
     return createAdminApiClient({
       storeDomain: process.env.SHOPIFY_STORE_ONE_URL,
       accessToken: process.env.SHOPIFY_STORE_ONE_ACCESS_TOKEN,
-      apiVersion: '2025-01',
+      apiVersion: '2025-10',
       headers: {
         'Content-Type': 'application/json',
         'X-Shopify-Access-Token': process.env.SHOPIFY_STORE_ONE_ACCESS_TOKEN
@@ -89,7 +110,7 @@ function getClientForStore(storeIdentifier: ShopifyStore) {
     return createAdminApiClient({
       storeDomain: process.env.SHOPIFY_STORE_TWO_URL,
       accessToken: process.env.SHOPIFY_STORE_TWO_ACCESS_TOKEN,
-      apiVersion: '2025-01',
+      apiVersion: '2025-10',
       headers: {
         'Content-Type': 'application/json',
         'X-Shopify-Access-Token': process.env.SHOPIFY_STORE_TWO_ACCESS_TOKEN
@@ -264,6 +285,9 @@ async function findShopifyProductBySku(client: ReturnType<typeof createAdminApiC
 
     console.log('Authentication successful, proceeding with product lookup');
 
+    // Normalize location ID to GID format for the query
+    const normalizedLocationId = normalizeLocationId(locationId);
+    
     // First find the inventory item ID using SKU
     const findInventoryItemQuery = `
       query {
@@ -279,7 +303,7 @@ async function findShopifyProductBySku(client: ReturnType<typeof createAdminApiC
               }
               inventoryItem {
                 id
-                inventoryLevel(locationId: "${locationId}") {
+                inventoryLevel(locationId: "${normalizedLocationId}") {
                   id
                   quantities(names: ["available", "on_hand", "committed", "incoming"]) {
                     name
@@ -316,11 +340,15 @@ async function findShopifyProductBySku(client: ReturnType<typeof createAdminApiC
       return acc;
     }, {});
 
+    // Use the location ID from the API response (already in GID format)
+    // Prefer the API response location ID, fallback to normalized input location ID
+    const finalLocationId = inventoryLevel.location?.id || normalizedLocationId;
+
     return {
       productId: inventoryItem.variant.product.id,
       variantId: inventoryItem.variant.id,
       inventoryItemId: inventoryItem.variant.inventoryItem.id,
-      locationId,
+      locationId: finalLocationId, // Use location ID from API response (already in GID format)
       currentInventory: quantities.on_hand || quantities.available || 0,
       title: inventoryItem.variant.product.title,
       quantities
@@ -366,11 +394,14 @@ async function updateShopifyInventory(
   // Calculate the delta (difference) instead of setting absolute quantity
   const delta = newQuantity - currentQuantity;
 
+  // Normalize location ID to ensure it's in GID format
+  const normalizedLocationId = normalizeLocationId(locationId);
+
   const variables = {
     input: {
       changes: [{
         inventoryItemId,
-        locationId,
+        locationId: normalizedLocationId, // Use normalized location ID
         delta: delta  // Changed from quantity to delta
       }],
       name: "available",  // Changed from "on_hand" to "available"
@@ -408,14 +439,17 @@ export async function syncInventoryWithShopify(
       : product.shopifyProducts?.grownManShave;
 
     // Use environment variable as fallback for locationId
-    const locationId = storeConfig?.locationId || 
+    const rawLocationId = storeConfig?.locationId || 
       (storeIdentifier === 'naked-armor' 
         ? process.env.SHOPIFY_STORE_ONE_LOCATION_ID 
         : process.env.SHOPIFY_STORE_TWO_LOCATION_ID);
 
-    if (!locationId) {
+    if (!rawLocationId) {
       throw new Error(`No location ID configured for store: ${storeIdentifier}`);
     }
+
+    // Normalize location ID to GID format
+    const locationId = normalizeLocationId(rawLocationId);
 
     console.log(`Starting sync for product:`, {
       sku: product.sku,
@@ -537,6 +571,125 @@ export async function testShopifyConnection(storeIdentifier: string) {
     return response.data?.shop;
   } catch (error) {
     console.error('Shopify connection test failed:', error);
+    throw error;
+  }
+}
+
+// Rename the batch sync function to be more specific
+export async function syncBatchInventoryWithShopify(products: any[], store: 'store-one' | 'store-two') {
+  try {
+    const results = await Promise.all(
+      products.map(async (product) => {
+        const storeKey = store === 'store-one' ? 'nakedArmor' : 'grownManShave';
+        const shopifyProduct = product.shopifyProducts?.[storeKey];
+        
+        if (!shopifyProduct?.inventoryItemId) {
+          console.log(`No Shopify mapping for product ${product.sku} in ${store}`);
+          return null;
+        }
+
+        // Update inventory in Shopify
+        const response = await fetch(`/api/shopify/inventory/update`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            store,
+            inventoryItemId: shopifyProduct.inventoryItemId,
+            locationId: shopifyProduct.locationId,
+            quantity: product.onHand
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to update Shopify inventory: ${response.statusText}`);
+        }
+
+        return {
+          sku: product.sku,
+          success: true
+        };
+      })
+    );
+
+    return results.filter(Boolean);
+  } catch (error) {
+    console.error('Error syncing inventory with Shopify:', error);
+    throw error;
+  }
+}
+
+export async function verifyShopifyWebhook(req: NextApiRequest): Promise<boolean> {
+  const hmac = req.headers['x-shopify-hmac-sha256'] as string;
+  const topic = req.headers['x-shopify-topic'] as string;
+  const shop = req.headers['x-shopify-shop-domain'] as string;
+
+  // Get the appropriate webhook secret based on the shop domain
+  const webhookSecret = shop.includes('naked-armor') 
+    ? process.env.SHOPIFY_STORE_ONE_WEBHOOK_SECRET
+    : process.env.SHOPIFY_STORE_TWO_WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
+    console.error('Webhook secret not configured for shop:', shop);
+    return false;
+  }
+
+  // Get raw body data
+  const body = JSON.stringify(req.body);
+  
+  // Calculate HMAC
+  const calculated = crypto
+    .createHmac('sha256', webhookSecret)
+    .update(body, 'utf-8')
+    .digest('base64');
+
+  return crypto.timingSafeEqual(
+    Buffer.from(hmac),
+    Buffer.from(calculated)
+  );
+}
+
+// Add this function to register webhooks
+export async function registerShopifyWebhooks(store: ShopifyStore) {
+  const client = getClientForStore(store);
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  
+  const webhookEndpoint = `${appUrl}/api/webhooks/${store}/inventory`;
+  
+  const mutation = `
+    mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookUrl: URL!) {
+      webhookSubscriptionCreate(
+        topic: $topic,
+        webhookSubscription: {
+          format: JSON,
+          endpoint: {
+            deliveryMethod: HTTP,
+            url: $webhookUrl
+          }
+        }
+      ) {
+        webhookSubscription {
+          id
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  try {
+    const response = await client.request(mutation, {
+      variables: {
+        topic: "INVENTORY_LEVELS_UPDATE",
+        webhookUrl: webhookEndpoint
+      }
+    });
+
+    console.log(`Webhook registered for ${store}:`, response);
+    return response;
+  } catch (error) {
+    console.error(`Failed to register webhook for ${store}:`, error);
     throw error;
   }
 }

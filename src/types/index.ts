@@ -1,70 +1,52 @@
 // Product Types
 export interface Product {
-  id: string;
+  id?: string;
   sku: string;
   productName: string;
-  description: string;
+  description?: string;
+  status?: 'active' | 'inactive';
+  // Primary Location
+  location?: {
+    loc1: string;
+    loc2: string;
+    loc3: string;
+    loc4: string;
+  };
   onHand: number;
-  lastUpdated: any; // Firestore Timestamp
-  location: {
+  // Secondary Location
+  location2?: {
     loc1: string;
     loc2: string;
     loc3: string;
     loc4: string;
+    onHand: number;
   };
-  location2?: {  // Optional secondary location
-    loc1: string;
-    loc2: string;
-    loc3: string;
-    loc4: string;
-    onHand: number; // Separate inventory count for location 2
+  lastUpdated?: any; // Timestamp
+  createdAt?: any; // Timestamp
+  userId?: string;
+  shopifyProducts?: {
+    nakedArmor?: ShopifyStoreConfig;
+    grownManShave?: ShopifyStoreConfig;
   };
-  shopifyProducts: {
-    nakedArmor: {
-      productId: string;
-      inventoryItemId: string;
-      locationId: string;
-    };
-    grownManShave: {
-      productId: string;
-      inventoryItemId: string;
-      locationId: string;
-    };
-  };
-  status: 'active' | 'inactive';
-  userId: string;
-  createdAt: any; // Firestore Timestamp
 }
 
-// Warehouse Location Types
+// Location Types
 export interface Location {
-  id: string;
+  id?: string;
   name: string;
-  sections: {
-    [key: string]: {
-      aisles: {
-        [key: string]: {
-          shelves: {
-            [key: string]: {
-              bins: string[];
-            };
-          };
-        };
-      };
-    };
-  };
+  code: string;
+  type: string;
 }
 
 // Inventory Update Types
 export interface InventoryUpdate {
-  id: string;
+  id?: string;
   productSku: string;
-  previousQuantity: number;
-  newQuantity: number;
-  source: 'shopify' | 'manual' | 'import';
-  storeIdentifier?: string;
-  timestamp: Date;
-  userId: string;
+  quantity: number;
+  type: 'increment' | 'decrement' | 'set';
+  timestamp?: Date;
+  userId?: string;
+  notes?: string;
 }
 
 // User Types
@@ -94,4 +76,23 @@ export interface ShopifyInventoryUpdate {
   location_id: string;
   available: number;
   updated_at: string;
+}
+
+// Shopify Store Config Type
+export interface ShopifyStoreConfig {
+  productId: string;
+  variantId: string;
+  inventoryItemId: string;
+  locationId?: string;
+}
+
+export interface WebhookEvent {
+  id: string;
+  store: 'nakedArmor' | 'grownManShave';
+  eventType: 'order_created' | 'inventory_update' | 'refund' | 'other';
+  payload: any;
+  status: 'success' | 'error';
+  timestamp: Date;
+  processedAt: Date;
+  error?: string;
 } 

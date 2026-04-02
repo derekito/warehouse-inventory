@@ -33,6 +33,9 @@ const nextConfig = {
     };
     return config;
   },
+  experimental: {
+    esmExternals: 'loose'
+  }
 }
 
 module.exports = nextConfig
