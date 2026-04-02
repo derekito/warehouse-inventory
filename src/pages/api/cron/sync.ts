@@ -1,39 +1,47 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { getAllProducts } from '@/lib/db';
+import { adminDb as db } from '@/lib/firebase-admin';
 import { syncInventoryWithShopify } from '@/lib/shopify';
-import { adminDb } from '@/lib/firebase-admin';
+import { Product } from '@/types';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Security check
-  const cronToken = req.headers['x-cron-token'];
-  if (cronToken !== process.env.CRON_SECRET) {
-    console.error('Unauthorized cron attempt');
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
   }
 
+  // Verify cron secret
+  if (req.headers['x-cron-token'] !== process.env.CRON_SECRET) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  let jobId: string | undefined;
+
   try {
-    console.log('Starting automated sync via cron...');
+    // Get all products from Firestore
+    const snapshot = await db.collection('products').get();
     
-    // Get all products using adminDb
-    const snapshot = await adminDb.collection('products').get();
     const products = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
-    }));
-    
-    console.log('Total products:', products.length);
+    })) as Product[];  // Fix type error by asserting as Product[]
 
-    // Filter products with SKUs (same as your manual sync)
+    // Filter products with SKUs
     const syncableProducts = products.filter(product => product.sku);
 
     if (syncableProducts.length === 0) {
       return res.status(200).json({
-        success: false,
-        message: 'No products found to sync'
+        success: true,
+        message: 'No products to sync'
       });
     }
 
-    // Sync with both stores (same as your manual sync)
+    // Create a job record
+    const jobRef = await db.collection('cron_jobs').add({
+      startTime: new Date(),
+      status: 'running',
+      type: 'full_sync'
+    });
+    jobId = jobRef.id;
+
     const results = await Promise.all(
       syncableProducts.map(async (product) => {
         const nakedArmorResult = await syncInventoryWithShopify(product, 'naked-armor');
@@ -42,24 +50,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
     );
 
-    // Flatten results and count successes/failures
-    const flatResults = results.flat();
-    const summary = {
-      succeeded: flatResults.filter(r => r.success).length,
-      failed: flatResults.filter(r => !r.success).length
-    };
+    // Update job status
+    await jobRef.update({
+      status: 'completed',
+      endTime: new Date(),
+      results
+    });
 
     return res.status(200).json({
       success: true,
-      summary,
-      results: flatResults
+      jobId,
+      results
     });
 
-  } catch (error) {
-    console.error('Cron sync failed:', error);
+  } catch (err) {
+    // Log error status if job was started
+    const error = err as Error;  // Type assertion
+    if (jobId) {
+      await db.collection('cron_jobs').doc(jobId).update({
+        status: 'error',
+        error: error.message,
+        endTime: new Date()
+      });
+    }
+
+    console.error('Sync error:', error);
     return res.status(500).json({ 
-      error: 'Sync failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
+      success: false, 
+      error: error.message 
     });
   }
 } 

@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import crypto from 'crypto';
 import getRawBody from 'raw-body';
 import { getProductBySkuAdmin, updateProductAdmin } from '@/lib/db-admin';
+import { adminDb } from '@/lib/firebase-admin';
 
 // Debug logging helper
 function debugLog(label: string, data: any) {
@@ -113,6 +114,32 @@ async function processOrder(order: any, storeConfig: any) {
         newQuantity,
         store: storeConfig.name
       });
+
+      // Record sale for dashboard trends
+      try {
+        // Map store identifier to dashboard store keys
+        const storeKey =
+          storeConfig.name === 'naked-armor' ? 'nakedArmor' : 'grownManShave';
+
+        // Compute revenue from line item (fallback to 0 if not available)
+        const unitPrice =
+          Number(item.price) ||
+          Number(item.price_set?.shop_money?.amount) ||
+          0;
+        const revenue = unitPrice * Number(quantity || 0);
+
+        await adminDb.collection('sales').add({
+          date: new Date(),
+          store: storeKey,
+          quantity: Number(quantity || 0),
+          revenue,
+          productId: product.id,
+          sku
+        });
+      } catch (salesError) {
+        console.error('Error recording sale:', salesError);
+        // Continue processing other items even if sales logging fails
+      }
     }
   } catch (error) {
     console.error('Order processing error:', error);

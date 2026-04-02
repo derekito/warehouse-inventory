@@ -74,7 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const client = createAdminApiClient({
       storeDomain: 'naked-armor.myshopify.com',
       accessToken: process.env.SHOPIFY_STORE_ONE_ACCESS_TOKEN || '',
-      apiVersion: '2025-01',
+      apiVersion: '2025-10',
     });
 
     console.log('Store configuration:', {

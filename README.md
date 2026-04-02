@@ -1,6 +1,122 @@
-## Shopify Inventory Management
+npm run dev## Shopify Inventory Management
 
 Build a Shopify app that tracks inventory levels from two different Shopify stores and "merges" that data into a very basic warehouse system. The warehouse system tracks products along with their assigned shelf and bin locations. The system allows users to look up real-time inventory levels for any product in the warehouse location. 
+
+## Sync Functionality
+
+The app provides two ways to sync inventory with Shopify stores:
+
+### 1. Full Sync
+Syncs all products in the database with both Shopify stores:
+
+```typescript
+// Example of full sync function
+async function handleShopifySync(store: 'naked-armor' | 'grown-man-shave') {
+  const syncableProducts = products.filter(product => product.sku);
+  
+  const response = await fetch('/api/shopify/sync', {
+    method: 'POST',
+    body: JSON.stringify({
+      products: syncableProducts,
+      storeIdentifier: store,
+    }),
+  });
+}
+```
+
+### 2. Incremental Sync
+The app provides both manual and automatic incremental sync:
+
+#### Manual Sync
+Only syncs products that have been modified since the last sync:
+
+```typescript
+// API endpoint for incremental sync
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // Get last sync timestamp
+  const lastSync = await db.collection('sync_history').doc('last_sync').get();
+  const lastSyncTime = lastSync.exists ? lastSync.data()?.timestamp : new Date(0);
+
+  // Query only modified products
+  const updatedProducts = await productsRef
+    .where('lastUpdated', '>', lastSyncTime)
+    .get();
+
+  // Sync each modified product
+  for (const product of products) {
+    const results = await syncProductWithBothStores(product);
+    // Process results...
+  }
+}
+```
+
+#### Automatic Sync
+Automatically triggers the incremental sync every 3 minutes (configurable):
+
+```typescript
+// Auto-sync implementation in Products page
+useEffect(() => {
+  const shouldSync = () => {
+    if (!lastAutoSync) return true;
+    const threeMinutesInMs = 3 * 60 * 1000;
+    const timeSinceLastSync = Date.now() - lastAutoSync.getTime();
+    return timeSinceLastSync > threeMinutesInMs;
+  };
+
+  const autoSync = async () => {
+    if (shouldSync()) {
+      const syncButton = document.querySelector('[data-testid="incremental-sync-btn"]');
+      if (syncButton) {
+        (syncButton as HTMLButtonElement).click();
+        setLastAutoSync(new Date());
+      }
+    }
+  };
+
+  // Run check every minute
+  const interval = setInterval(autoSync, 60 * 1000);
+  return () => clearInterval(interval);
+}, [lastAutoSync]);
+```
+
+The IncrementalSyncButton component handles the actual sync:
+
+```typescript
+export default function IncrementalSyncButton({ className = '', ...props }) {
+  const handleIncrementalSync = async () => {
+    const response = await fetch('/api/sync/incremental', {
+      method: 'POST'
+    });
+    
+    const data = await response.json();
+    if (data.success) {
+      toast({
+        title: 'Sync Complete',
+        description: `Updated ${data.details.productsUpdated} products`,
+      });
+    }
+  };
+
+  return (
+    <button
+      onClick={handleIncrementalSync}
+      data-testid="incremental-sync-btn"
+    >
+      Sync Partial
+    </button>
+  );
+}
+```
+
+### Key Features:
+- Uses SKU as the master identifier across systems
+- Maintains sync history in Firestore
+- Provides detailed success/failure reporting
+- Handles both stores simultaneously
+- Prevents unnecessary API calls for unchanged products
+- Automatic sync every 3 minutes (configurable to any interval)
+- Visual feedback through toast notifications
+- Detailed logging for troubleshooting
 
 The app will be built using the Shopify API and the Next.js framework. The app will be deployed to Vercel.
 
@@ -76,7 +192,25 @@ npm install node-cron node-fetch dotenv
 ```bash
 npm run cron
 ```
+8. Run Incremental Cron Job:
+```bash
+node cron/sync-incremental.js
+```
+Reinstall Dependencies // Server Down
 
+# Stop the server and run:
+```bash
+rm -rf .next
+
+# Remove node_modules and package-lock.json
+```bash
+rm -rf node_modules package-lock.json
+
+# Reinstall dependencies
+npm install
+
+npm run dev
+```
 
 ## Architecture
 
@@ -154,6 +288,10 @@ npm run build
 npm run deploy
 ```
 
+## Start Application
+
+npm run dev
+
 ## Database Schema & Structure
 
 Use Firebase Firestore for the database.
@@ -163,15 +301,7 @@ Use Firebase Firestore for the database.
 #### Products Collection
 - `SKU` (string, primary key)
 - `ProductName` (string)
-- `WarehouseName` (string)
-- `Loc1` (string)
-- `Loc2` (string)
-- `Loc3` (string)
-- `Loc4` (string)
-- `OnHand` (number)
-- `LastUpdated` (timestamp)
-- `StoreIdentifier` (string)
-- `Status` (string)
+gro
 
 #### Audit Collection
 - Track inventory changes
@@ -479,6 +609,25 @@ export async function updateProductInventory(data: any, store: string) {
      -d '{"sku":"test","quantity":5}' \
      https://your-domain.com/api/webhooks/naked-armor/inventory
    ```
+### Cron Job cron/sync.js
+
+npm run cron
+
+  Updated cron schedule from */1 * * * * to 0 */6 * * *
+  This means it will run at:
+  -12:00 AM
+  6:00 AM
+  12:00 PM
+  6:00 PM
+  
+  3. Updated the console log message to reflect the new schedule
+  
+  The cron expression 0 */6 * * * breaks down as:
+  0 - At minute 0
+  */6 - Every 6th hour
+  * * * - Every day, every month, every day of the week
+
+
 
 ### Key Features
 
@@ -500,3 +649,106 @@ export async function updateProductInventory(data: any, store: string) {
    - Separate configurations per store
    - Store-specific webhook endpoints
    - Independent inventory tracking
+
+### Firebase Rules
+
+- Working Version Pasted Into Firebase Directly
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Products collection - allow all operations when authenticated
+    match /products/{productId} {
+      allow read, write: if true; // Keep this as true for now since it was working
+    }
+
+    // Locations collection
+    match /locations/{locationId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Inventory updates
+    match /inventory_updates/{updateId} {
+      allow read, write: if true; // Allow reading for dashboard activity
+    }
+
+    // Dashboard Collections
+    match /sales/{saleId} {
+      allow read: if true; // Allow reading for sales trends
+      allow write: if isAuthenticated();
+    }
+
+    match /error_logs/{logId} {
+      allow read: if true; // Allow reading for error monitoring
+      allow write: if true; // Allow writing for error logging
+    }
+
+    match /api_metrics/{metricId} {
+      allow read: if true; // Allow reading for performance metrics
+      allow write: if true; // Allow writing for API monitoring
+    }
+
+    // Webhook and Cron Collections
+    match /webhook_events/{eventId} {
+      allow read: if true; // Allow reading for recent activity
+      allow write: if true; // Allow webhook processing
+    }
+
+    match /cron_jobs/{jobId} {
+      allow read: if true; // Allow reading for recent activity
+      allow write: if true; // Allow cron job updates
+    }
+
+    // System status
+    match /system/{docId} {
+      allow read: if true; // Allow reading sync status
+      allow write: if isAuthenticated();
+    }
+
+    // Performance metrics collection
+    match /performance_metrics/{metricId} {
+      allow read: if true; // Allow reading for dashboard
+      allow write: if isAuthenticated();
+    }
+  }
+}
+```
+
+## Cron Jobs
+
+The application uses cron jobs to keep inventory in sync:
+
+* Full sync: Runs daily at midnight
+* Incremental sync: Runs every 5 minutes (temporary for testing)
+
+To start the cron jobs:
+```bash
+npm run cron
+```
+
+# 1. First, fix ownership of your project directory
+sudo chown -R $(whoami) /Users/derekdodds-r/Coding/inv-manage
+
+# 2. Fix permissions for the npm cache
+sudo chown -R $(whoami) ~/.npm
+
+# 3. Remove existing node_modules and package-lock.json
+rm -rf node_modules package-lock.json
+
+# 4. Clear npm cache completely
+npm cache clean --force
+
+# 5. Now try installing again
+npm install
+
+Restarting Computer & Ngrok
+- npm run dev (start app)
+- ngrok http 3000 (start ngrok)
+
+login to: https://dashboard.ngrok.com/login

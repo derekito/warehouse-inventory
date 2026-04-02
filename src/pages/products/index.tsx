@@ -3,9 +3,15 @@ import { Product } from '@/types';
 import { getAllProducts, addProduct, updateProduct, deleteProduct } from '@/lib/db';
 import ProductEditModal from '@/components/ProductEditModal';
 import CsvImportModal from '@/components/CsvImportModal';
+import IncrementalSyncButton from '@/components/IncrementalSyncButton';
 import { toast } from '@/lib/toast';
-import { syncAllProducts } from '@/lib/shopify';
 import { useRouter } from 'next/router';
+
+interface SyncResult {
+  success: boolean;
+  sku: string;
+  error?: string;
+}
 
 export default function Products() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -21,11 +27,85 @@ export default function Products() {
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showUpdateMode, setShowUpdateMode] = useState(false);
+  const [sortField, setSortField] = useState<string>('');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [lastAutoSync, setLastAutoSync] = useState<Date | null>(null);
   const router = useRouter();
 
   useEffect(() => {
     loadProducts();
   }, []);
+
+  // Auto-sync effect
+  useEffect(() => {
+    // Check if time has passed since last sync
+    const shouldSync = () => {
+      if (!lastAutoSync) {
+        console.log('No previous sync found, should run initial sync');
+        return true;
+      }
+      const thirtyMinutesInMs = 30 * 60 * 1000;  // 30 minutes in milliseconds
+      const timeSinceLastSync = Date.now() - lastAutoSync.getTime();
+      console.log(`Time since last sync: ${Math.floor(timeSinceLastSync / 1000)} seconds`);
+      console.log(`Next sync in: ${Math.floor((thirtyMinutesInMs - timeSinceLastSync) / 1000)} seconds`);
+      return timeSinceLastSync > thirtyMinutesInMs;
+    };
+
+    const autoSync = async () => {
+      console.log('Checking if sync is needed...');
+      if (shouldSync()) {
+        console.log('Auto-sync triggered');
+        const syncButton = document.querySelector('[data-testid="incremental-sync-btn"]');
+        console.log('Sync button found:', !!syncButton);
+        
+        if (syncButton) {
+          try {
+            console.log('Attempting to trigger sync button click');
+            (syncButton as HTMLButtonElement).click();
+            setLastAutoSync(new Date());
+            console.log('Sync button clicked, timestamp updated');
+            toast({
+              title: 'Auto-Sync Triggered',
+              description: 'Running automatic sync...',
+            });
+          } catch (error) {
+            console.error('Error triggering sync:', error);
+            toast({
+              title: 'Auto-Sync Failed',
+              description: 'Failed to trigger automatic sync',
+              variant: 'destructive',
+            });
+          }
+        } else {
+          console.error('Sync button not found in DOM');
+          toast({
+            title: 'Auto-Sync Error',
+            description: 'Could not find sync button',
+            variant: 'destructive',
+          });
+        }
+      } else {
+        console.log('Sync not needed yet');
+      }
+    };
+
+    // Run initial check
+    console.log('Setting up auto-sync...');
+    autoSync();
+
+    // Set up interval to check every minute
+    const interval = setInterval(() => {
+      console.log('Running periodic sync check...');
+      autoSync();
+    }, 60 * 1000);
+
+    console.log('Auto-sync interval set up');
+
+    return () => {
+      console.log('Cleaning up auto-sync interval');
+      clearInterval(interval);
+    };
+  }, [lastAutoSync]);
 
   const loadProducts = async () => {
     try {
@@ -64,7 +144,12 @@ export default function Products() {
     try {
       if (!editingProduct?.id) throw new Error('No product selected for editing');
       
-      await updateProduct(editingProduct.id, updatedProduct);
+      // Remove any undefined or null values
+      const cleanData = Object.fromEntries(
+        Object.entries(updatedProduct).filter(([_, v]) => v != null)
+      );
+
+      await updateProduct(editingProduct.id, cleanData);
       toast({
         title: 'Success',
         description: 'Product updated successfully',
@@ -84,7 +169,7 @@ export default function Products() {
 
   const handleAddSave = async (newProduct: Partial<Product>) => {
     try {
-      await addProduct(newProduct as Omit<Product, 'id' | 'userId' | 'createdAt' | 'lastUpdated'>);
+      await addProduct(newProduct as Omit<Product, 'id' | 'userId' | 'createdAt'>);
       toast({
         title: 'Success',
         description: 'Product added successfully',
@@ -221,8 +306,8 @@ export default function Products() {
 
       if (data.summary.failed > 0) {
         const failedItems = data.results
-          .filter(r => !r.success)
-          .map(r => `${r.sku}: ${r.error}`)
+          .filter((r: SyncResult) => !r.success)
+          .map((r: SyncResult) => `${r.sku}: ${r.error}`)
           .join('\n');
         
         toast({
@@ -288,10 +373,63 @@ export default function Products() {
     setShowImportModal(true);
   };
 
-  const filteredProducts = products.filter(product => 
-    product.productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    product.sku.toLowerCase().includes(searchQuery.toLowerCase())
+  const sortProducts = (products: Product[]) => {
+    if (!sortField) return products;
+
+    return [...products].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortField) {
+        case 'sku':
+        case 'productName':
+        case 'status':
+          aValue = a[sortField]?.toLowerCase();
+          bValue = b[sortField]?.toLowerCase();
+          break;
+        case 'primaryLoc':
+          aValue = a.location ? `${a.location.loc1}-${a.location.loc2}-${a.location.loc3}-${a.location.loc4}` : '';
+          bValue = b.location ? `${b.location.loc1}-${b.location.loc2}-${b.location.loc3}-${b.location.loc4}` : '';
+          break;
+        case 'secondaryLoc':
+          aValue = a.location2 ? `${a.location2.loc1}-${a.location2.loc2}-${a.location2.loc3}-${a.location2.loc4}` : '';
+          bValue = b.location2 ? `${b.location2.loc1}-${b.location2.loc2}-${b.location2.loc3}-${b.location2.loc4}` : '';
+          break;
+        case 'primaryStock':
+          aValue = a.onHand;
+          bValue = b.onHand;
+          break;
+        case 'secondaryStock':
+          aValue = a.location2?.onHand || 0;
+          bValue = b.location2?.onHand || 0;
+          break;
+        default:
+          return 0;
+      }
+
+      if (sortDirection === 'asc') {
+        return aValue > bValue ? 1 : -1;
+      } else {
+        return aValue < bValue ? 1 : -1;
+      }
+    });
+  };
+
+  const filteredProducts = sortProducts(
+    products.filter(product => 
+      product.productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      product.sku.toLowerCase().includes(searchQuery.toLowerCase())
+    )
   );
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
 
   if (loading) {
     return <div className="flex justify-center items-center h-screen">Loading...</div>;
@@ -302,44 +440,37 @@ export default function Products() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-6">
+    <div className="container mx-auto px-6 py-8 max-w-[1400px]">
+      <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Products</h1>
-        <div className="flex space-x-4">
+        <div className="space-x-4">
           <button
-            onClick={() => router.push('/products/new')}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            onClick={() => setShowAddModal(true)}
+            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
           >
             Add New Product
           </button>
           <button
-            onClick={handleImportClick}
-            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+            onClick={() => setShowImportModal(true)}
+            className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
           >
             Import CSV
           </button>
+          <IncrementalSyncButton />
           <button
-            onClick={handleUpdateClick}
-            className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2"
+            onClick={() => handleShopifySync('naked-armor')}
+            className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded"
+            disabled={isSyncing}
           >
-            Update From CSV
+            Sync Naked Armor
           </button>
-          <div className="flex space-x-2">
-            <button
-              onClick={() => handleShopifySync('naked-armor')}
-              disabled={isSyncing}
-              className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50"
-            >
-              {isSyncing ? 'Syncing...' : 'Sync Naked Armor'}
-            </button>
-            <button
-              onClick={() => handleShopifySync('grown-man-shave')}
-              disabled={isSyncing}
-              className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50"
-            >
-              {isSyncing ? 'Syncing...' : 'Sync Grown Man Shave'}
-            </button>
-          </div>
+          <button
+            onClick={() => handleShopifySync('grown-man-shave')}
+            className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded"
+            disabled={isSyncing}
+          >
+            Sync Grown Man Shave
+          </button>
         </div>
       </div>
 
@@ -366,19 +497,54 @@ export default function Products() {
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full table-fixed divide-y divide-gray-200">
+      <div className="overflow-x-auto bg-white rounded-lg shadow">
+        <table className="min-w-full table-fixed divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-              <th className="w-48 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-              <th className="w-32 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Primary Loc</th>
-              <th className="w-20 px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Stock</th>
-              <th className="w-32 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Secondary Loc</th>
-              <th className="w-20 px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Stock</th>
-              <th className="w-20 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="w-24 px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
-              <th className="w-10 px-2 py-3 text-center">
+              <th 
+                className="w-36 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('sku')}
+              >
+                SKU {sortField === 'sku' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
+              <th 
+                className="w-72 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('productName')}
+              >
+                Name {sortField === 'productName' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
+              <th 
+                className="w-36 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('primaryLoc')}
+              >
+                Primary Loc {sortField === 'primaryLoc' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
+              <th 
+                className="w-20 px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('primaryStock')}
+              >
+                Stock {sortField === 'primaryStock' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
+              <th 
+                className="w-36 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('secondaryLoc')}
+              >
+                Secondary Loc {sortField === 'secondaryLoc' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
+              <th 
+                className="w-20 px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('secondaryStock')}
+              >
+                Stock {sortField === 'secondaryStock' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
+              <th 
+                className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSort('status')}
+              >
+                Status {sortField === 'status' && (sortDirection === 'asc' ? '↑' : '↓')}
+              </th>
+              <th className="w-20 px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+              <th className="w-12 px-2 py-3 text-center">
                 <input
                   type="checkbox"
                   onChange={e => {
@@ -395,15 +561,20 @@ export default function Products() {
             {filteredProducts.map((product) => (
               <tr key={product.id} className="hover:bg-gray-50">
                 <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-900">{product.sku}</td>
-                <td className="px-2 py-3 text-sm text-gray-900">{product.productName}</td>
+                <td className="px-2 py-3 text-sm text-gray-900 whitespace-normal">{product.productName}</td>
                 <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-900">
                   {product.location ? `${product.location.loc1}-${product.location.loc2}-${product.location.loc3}-${product.location.loc4}` : 'N/A'}
                 </td>
                 <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-900 text-center">{product.onHand}</td>
                 <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-900">
-                  {product.location2 ? `${product.location2.loc1}-${product.location2.loc2}-${product.location2.loc3}-${product.location2.loc4}` : 'N/A'}
+                  {product.location2 ? 
+                    `${product.location2.loc1}-${product.location2.loc2}-${product.location2.loc3}-${product.location2.loc4}` 
+                    : 'N/A'
+                  }
                 </td>
-                <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-900 text-center">{product.location2?.onHand || 0}</td>
+                <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-900 text-center">
+                  {product.location2?.onHand || 0}
+                </td>
                 <td className="px-2 py-3 whitespace-nowrap text-sm">
                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                     product.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
@@ -412,22 +583,12 @@ export default function Products() {
                   </span>
                 </td>
                 <td className="px-2 py-3 whitespace-nowrap text-sm text-center">
-                  <div className="flex justify-center items-center space-x-2">
+                  <div className="flex justify-center items-center">
                     <button
                       onClick={() => handleEditClick(product)}
                       className="text-blue-600 hover:text-blue-900"
                     >
                       Edit
-                    </button>
-                    <span className="text-gray-300">|</span>
-                    <button
-                      onClick={() => handleDeleteClick(product)}
-                      disabled={deletingProduct?.id === product.id}
-                      className={`text-red-600 hover:text-red-900 ${
-                        deletingProduct?.id === product.id ? 'opacity-50 cursor-not-allowed' : ''
-                      }`}
-                    >
-                      {deletingProduct?.id === product.id ? '...' : 'Delete'}
                     </button>
                   </div>
                 </td>

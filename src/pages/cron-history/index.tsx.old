@@ -1,0 +1,139 @@
+import { useEffect, useState } from 'react';
+import { getCronHistory } from '@/lib/db';
+import type { CronJob } from '@/types';
+import { toast } from '@/lib/toast';
+import { format, formatDistanceToNow } from 'date-fns';
+
+export default function CronHistory() {
+  const [jobs, setJobs] = useState<CronJob[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<string>('all');
+
+  useEffect(() => {
+    loadCronHistory();
+  }, []);
+
+  const loadCronHistory = async () => {
+    try {
+      const history = await getCronHistory();
+      setJobs(history);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to load cron history',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'success': return 'bg-green-100 text-green-800';
+      case 'error': return 'bg-red-100 text-red-800';
+      case 'running': return 'bg-blue-100 text-blue-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const formatDuration = (start: Date, end?: Date) => {
+    if (!end) return 'In progress';
+    const duration = (end.getTime() - start.getTime()) / 1000; // in seconds
+    if (duration < 60) return `${Math.round(duration)}s`;
+    return `${Math.round(duration / 60)}m ${Math.round(duration % 60)}s`;
+  };
+
+  const filteredJobs = jobs.filter(job => 
+    filter === 'all' || job.type === filter
+  );
+
+  if (loading) {
+    return <div className="flex justify-center items-center h-screen">Loading...</div>;
+  }
+
+  return (
+    <div className="container mx-auto px-6 py-8 max-w-[1400px]">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Cron Job History</h1>
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+        >
+          <option value="all">All Jobs</option>
+          <option value="sync">Sync Jobs</option>
+          <option value="cleanup">Cleanup Jobs</option>
+          <option value="backup">Backup Jobs</option>
+        </select>
+      </div>
+
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Start Time
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Type
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Duration
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Details
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredJobs.map((job) => (
+                <tr key={job.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <div>{format(job.startTime, 'MMM d, yyyy HH:mm:ss')}</div>
+                    <div className="text-xs text-gray-400">
+                      {formatDistanceToNow(job.startTime, { addSuffix: true })}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 capitalize">
+                    {job.type}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {formatDuration(job.startTime, job.endTime)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(job.status)}`}>
+                      {job.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-500">
+                    {job.error && (
+                      <div className="text-red-500">{job.error}</div>
+                    )}
+                    {job.details && (
+                      <div>
+                        {job.details.productsProcessed && 
+                          <div>Products processed: {job.details.productsProcessed}</div>
+                        }
+                        {job.details.nakedArmorSync !== undefined && (
+                          <div>Naked Armor: {job.details.nakedArmorSync ? '✓' : '✗'}</div>
+                        )}
+                        {job.details.grownManShaveSync !== undefined && (
+                          <div>Grown Man Shave: {job.details.grownManShaveSync ? '✓' : '✗'}</div>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+} 

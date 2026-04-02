@@ -4,7 +4,8 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  User
+  User,
+  getAuth
 } from 'firebase/auth';
 
 // Sign in with email and password
@@ -22,6 +23,8 @@ export async function signUp(email: string, password: string): Promise<User> {
 // Sign out
 export async function signOut(): Promise<void> {
   await firebaseSignOut(auth);
+  // Optionally clear any local storage or state
+  window.localStorage.clear();
 }
 
 // Subscribe to auth state changes
@@ -55,4 +58,14 @@ export async function getUserRole(): Promise<'admin' | 'user' | null> {
 export async function isAdmin(): Promise<boolean> {
   const role = await getUserRole();
   return role === 'admin';
+}
+
+export function waitForAuth() {
+  return new Promise((resolve, reject) => {
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      unsubscribe();
+      resolve(user);
+    }, reject);
+  });
 }

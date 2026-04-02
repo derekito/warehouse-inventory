@@ -47,3 +47,5 @@ next-env.d.ts
 
 # Keep example file
 !.env.example 
+# old deps backups
+node_modules-old/

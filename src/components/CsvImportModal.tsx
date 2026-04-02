@@ -10,6 +10,44 @@ interface CsvImportModalProps {
   mode?: 'import' | 'update';
 }
 
+const CSV_TEMPLATE_HEADERS = [
+  'sku',
+  'productName',
+  'description',
+  'status',
+  // Primary Location
+  'location.loc1',
+  'location.loc2',
+  'location.loc3',
+  'location.loc4',
+  'onHand',
+  // Secondary Location
+  'location2.loc1',
+  'location2.loc2',
+  'location2.loc3',
+  'location2.loc4',
+  'location2.onHand'
+];
+
+const SAMPLE_DATA = [
+  'SKU123',
+  'Product Name',
+  'Product Description',
+  'active',
+  // Primary Location
+  'JOY',
+  'SH',
+  '5',
+  'BIN-4A',
+  '10',
+  // Secondary Location
+  'JOY',
+  'SH',
+  '6',
+  'BIN-10E',
+  '5'
+].join(',');
+
 export default function CsvImportModal({ isOpen, onClose, onImport, mode = 'import' }: CsvImportModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -25,36 +63,31 @@ export default function CsvImportModal({ isOpen, onClose, onImport, mode = 'impo
         try {
           setIsLoading(true);
           const products = results.data.map((row: any) => {
-            let status: 'active' | 'inactive' = 'active';
-            if (row.Status?.toLowerCase() === 'inactive') {
-              status = 'inactive';
+            // Ensure SKU exists
+            if (!row.sku && !row.SKU) {
+              throw new Error('SKU is required for each row');
             }
 
             return {
-              sku: row.SKU,
-              productName: row.ProductName,
-              description: row.Description || '',
-              onHand: parseInt(row.OnHand) || 0,
-              status,
+              sku: row.sku || row.SKU,
+              productName: row.productName || row.ProductName,
+              description: row.description || row.Description || '',
+              status: row.status?.toLowerCase() === 'inactive' ? 'inactive' : 'active',
+              // Primary Location
               location: {
-                loc1: row.Section || '',
-                loc2: row.Aisle || '',
-                loc3: row.Shelf || '',
-                loc4: row.Bin || ''
+                loc1: row['location.loc1'] || row.Section || '',
+                loc2: row['location.loc2'] || row.Aisle || '',
+                loc3: row['location.loc3'] || row.Shelf || '',
+                loc4: row['location.loc4'] || row.Bin || ''
               },
-              shopifyProducts: {
-                nakedArmor: {
-                  productId: '',
-                  variantId: '',
-                  inventoryItemId: '',
-                  locationId: process.env.NEXT_PUBLIC_SHOPIFY_STORE_ONE_LOCATION_ID || ''
-                },
-                grownManShave: {
-                  productId: '',
-                  variantId: '',
-                  inventoryItemId: '',
-                  locationId: process.env.NEXT_PUBLIC_SHOPIFY_STORE_TWO_LOCATION_ID || ''
-                }
+              onHand: parseInt(row.onHand || row.OnHand) || 0,
+              // Secondary Location
+              location2: {
+                loc1: row['location2.loc1'] || '',
+                loc2: row['location2.loc2'] || '',
+                loc3: row['location2.loc3'] || '',
+                loc4: row['location2.loc4'] || '',
+                onHand: parseInt(row['location2.onHand']) || 0
               }
             };
           });
@@ -74,17 +107,48 @@ export default function CsvImportModal({ isOpen, onClose, onImport, mode = 'impo
   };
 
   const handleDownloadTemplate = () => {
-    const headers = ['SKU', 'ProductName', 'Description', 'OnHand', 'Status', 'Section', 'Aisle', 'Shelf', 'Bin'];
-    const csvContent = headers.join(',') + '\n';
+    const csvContent = [
+      CSV_TEMPLATE_HEADERS.join(','),
+      SAMPLE_DATA
+    ].join('\n');
+
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'product_import_template.csv';
+    a.download = 'inventory_template.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
+  };
+
+  const processCSV = (csvText: string) => {
+    const lines = csvText.split('\n');
+    const headers = lines[0].split(',').map(h => h.trim());
+    
+    return lines.slice(1).map(line => {
+      const values = line.split(',').map(v => v.trim());
+      const product: any = {};
+      
+      headers.forEach((header, index) => {
+        if (header.includes('.')) {
+          // Handle nested properties (location and location2)
+          const [parent, child] = header.split('.');
+          if (!product[parent]) product[parent] = {};
+          product[parent][child] = values[index];
+          
+          // Convert onHand to number for both locations
+          if (child === 'onHand') {
+            product[parent][child] = parseInt(values[index]) || 0;
+          }
+        } else {
+          product[header] = values[index];
+        }
+      });
+
+      return product;
+    });
   };
 
   return (
@@ -106,7 +170,13 @@ export default function CsvImportModal({ isOpen, onClose, onImport, mode = 'impo
         <div className="space-y-4">
           <div>
             <p className="text-sm text-gray-600 mb-2">
-              Upload a CSV file with the following columns: SKU, ProductName, Description, OnHand, Status, Section, Aisle, Shelf, Bin
+              Required columns: SKU, ProductName
+              <br />
+              Optional columns: Description, Status
+              <br />
+              Primary Location: location.loc1, location.loc2, location.loc3, location.loc4, onHand
+              <br />
+              Secondary Location: location2.loc1, location2.loc2, location2.loc3, location2.loc4, location2.onHand
             </p>
             <button
               onClick={handleDownloadTemplate}
