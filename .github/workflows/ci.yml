@@ -1,11 +1,5 @@
-# Verifies `npm run build` on push/PR. Production deploy: Vercel.
-#
-# GitHub Actions does NOT read Vercel environment variables. To make this job pass,
-# create the same names under: Repo Settings → Secrets and variables → Actions.
-# Your client bundle needs NEXT_PUBLIC_* secrets (see src/lib/firebase.ts); server/admin
-# needs FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY. Values match Firebase / Vercel.
-#
-# See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+# Lightweight CI: TypeScript check only (no Firebase/Shopify secrets).
+# Production builds and env stay on Vercel — no Vercel changes required.
 name: CI
 
 on:
@@ -15,36 +9,13 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
-  build:
+  typecheck:
     runs-on: ubuntu-latest
-    # Run checkout/setup-node JS on Node 24 (stops "Node 20 deprecated" annotations)
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
-      NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
-      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
-      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
-      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
-      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
-      NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
-      FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
-      FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
-      FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-      FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
-      FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
-      FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
-      FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
-      FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
-      SHOPIFY_STORE_ONE_URL: ${{ secrets.SHOPIFY_STORE_ONE_URL }}
-      SHOPIFY_STORE_ONE_ACCESS_TOKEN: ${{ secrets.SHOPIFY_STORE_ONE_ACCESS_TOKEN }}
-      SHOPIFY_STORE_ONE_LOCATION_ID: ${{ secrets.SHOPIFY_STORE_ONE_LOCATION_ID }}
-      SHOPIFY_STORE_TWO_URL: ${{ secrets.SHOPIFY_STORE_TWO_URL }}
-      SHOPIFY_STORE_TWO_ACCESS_TOKEN: ${{ secrets.SHOPIFY_STORE_TWO_ACCESS_TOKEN }}
-      SHOPIFY_STORE_TWO_LOCATION_ID: ${{ secrets.SHOPIFY_STORE_TWO_LOCATION_ID }}
-      SHOPIFY_STORE_ONE_WEBHOOK_SECRET: ${{ secrets.SHOPIFY_STORE_ONE_WEBHOOK_SECRET }}
-      SHOPIFY_STORE_TWO_WEBHOOK_SECRET: ${{ secrets.SHOPIFY_STORE_TWO_WEBHOOK_SECRET }}
 
     steps:
       - uses: actions/checkout@v6
@@ -57,5 +28,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Typecheck
+        run: npx tsc --noEmit
