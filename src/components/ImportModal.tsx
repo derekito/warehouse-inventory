@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
 
-export function ImportModal({ isOpen, onClose, onSuccess }) {
-  const [importing, setImporting] = useState(false);
-  const [results, setResults] = useState(null);
+type ImportModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: (result?: unknown) => void;
+};
 
-  const handleImport = async (parsedData) => {
+export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
+  const [importing, setImporting] = useState<boolean>(false);
+  const [results, setResults] = useState<unknown | null>(null);
+
+  const handleImport = async (parsedData: unknown) => {
     setImporting(true);
     try {
       const response = await fetch('/api/import-csv', {
@@ -30,11 +36,12 @@ export function ImportModal({ isOpen, onClose, onSuccess }) {
       }
 
       onSuccess();
-    } catch (error) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('Import error:', error);
       toast({
         title: 'Import Failed',
-        description: error.message,
+        description: message,
         variant: 'destructive'
       });
     } finally {
