@@ -52,22 +52,39 @@ export default function ProductEditModal({ product, isOpen, onClose, onSave }: P
 
     if (name.startsWith('location.')) {
       const [_, field] = name.split('.');
-      setFormData(prev => ({
-        ...prev,
-        location: {
-          ...prev.location,
-          [field]: value
-        }
-      }));
+      setFormData(prev => {
+        const base = {
+          loc1: prev.location?.loc1 ?? '',
+          loc2: prev.location?.loc2 ?? '',
+          loc3: prev.location?.loc3 ?? '',
+          loc4: prev.location?.loc4 ?? ''
+        };
+        (base as Record<'loc1'|'loc2'|'loc3'|'loc4', string>)[field as 'loc1'|'loc2'|'loc3'|'loc4'] = String(value ?? '');
+        return {
+          ...prev,
+          location: base
+        };
+      });
     } else if (name.startsWith('location2.')) {
       const [_, field] = name.split('.');
-      setFormData(prev => ({
-        ...prev,
-        location2: {
-          ...prev.location2,
-          [field]: field === 'onHand' ? parseInt(value) || 0 : value
+      setFormData(prev => {
+        const base = {
+          loc1: prev.location2?.loc1 ?? '',
+          loc2: prev.location2?.loc2 ?? '',
+          loc3: prev.location2?.loc3 ?? '',
+          loc4: prev.location2?.loc4 ?? '',
+          onHand: prev.location2?.onHand ?? 0
+        };
+        if (field === 'onHand') {
+          (base as any).onHand = parseInt(value) || 0;
+        } else {
+          (base as Record<'loc1'|'loc2'|'loc3'|'loc4', string>)[field as 'loc1'|'loc2'|'loc3'|'loc4'] = String(value ?? '');
         }
-      }));
+        return {
+          ...prev,
+          location2: base
+        };
+      });
     } else {
       setFormData(prev => ({
         ...prev,
