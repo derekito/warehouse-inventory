@@ -1,4 +1,5 @@
 import { adminDb } from './firebase-admin';
+import { withFirestoreRetry } from './firestore-retry';
 import { Product } from '../types';  // Make sure we import the Product type
 
 // Add proper type for update data
@@ -37,15 +38,17 @@ export async function getProductBySkuAdmin(
   sku: string
 ): Promise<(Product & { id: string }) | null> {
   try {
-    const snapshot = await adminDb
-      .collection('products')
-      .where('sku', '==', sku)
-      .limit(1)
-      .get();
+    return await withFirestoreRetry(async () => {
+      const snapshot = await adminDb
+        .collection('products')
+        .where('sku', '==', sku)
+        .limit(1)
+        .get();
 
-    if (snapshot.empty) return null;
-    const doc = snapshot.docs[0];
-    return { id: doc.id, ...doc.data() } as Product & { id: string };
+      if (snapshot.empty) return null;
+      const doc = snapshot.docs[0];
+      return { id: doc.id, ...doc.data() } as Product & { id: string };
+    }, `getProductBySkuAdmin(${sku})`);
   } catch (error) {
     console.error('Error getting product by SKU:', error);
     throw error;
@@ -54,13 +57,17 @@ export async function getProductBySkuAdmin(
 
 export async function updateProductAdmin(id: string, data: any) {
   try {
-    return await adminDb
-      .collection('products')
-      .doc(id)
-      .update({
-        ...data,
-        lastUpdated: new Date()
-      });
+    return await withFirestoreRetry(
+      () =>
+        adminDb
+          .collection('products')
+          .doc(id)
+          .update({
+            ...data,
+            lastUpdated: new Date()
+          }),
+      `updateProductAdmin(${id})`
+    );
   } catch (error) {
     console.error('Error updating product:', error);
     throw error;
