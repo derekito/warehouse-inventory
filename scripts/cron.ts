@@ -1,5 +1,4 @@
 const cron = require('node-cron');
-const fetch = require('node-fetch');
 const dotenv = require('dotenv');
 
 dotenv.config();
@@ -44,6 +43,7 @@ async function runIncrementalSync() {
   try {
     console.log('Starting incremental sync...');
     
+    // Use the global fetch available in Node 18+ / Vercel
     const response = await fetch(`${APP_URL}/api/cron/sync-incremental`, {
       method: 'POST',
       headers: {
