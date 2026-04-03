@@ -1,5 +1,5 @@
-# Verifies the app builds on each push. Deployment is on Vercel — not GitHub Pages
-# (this Next.js app is not configured for static export to ./out).
+# Verifies `npm run build` on push/PR. Production deploy: Vercel.
+# See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
 name: CI
 
 on:
@@ -13,7 +13,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Run checkout/setup-node JS on Node 24 (stops "Node 20 deprecated" annotations)
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
       NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
       NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
@@ -39,12 +41,35 @@ jobs:
       SHOPIFY_STORE_TWO_WEBHOOK_SECRET: ${{ secrets.SHOPIFY_STORE_TWO_WEBHOOK_SECRET }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
+
+      - name: Check required Actions secrets (fail with hint if missing)
+        shell: bash
+        run: |
+          missing=0
+          for name in \
+            NEXT_PUBLIC_FIREBASE_API_KEY \
+            NEXT_PUBLIC_FIREBASE_PROJECT_ID \
+            FIREBASE_CLIENT_EMAIL \
+            FIREBASE_PRIVATE_KEY \
+            FIREBASE_PROJECT_ID
+          do
+            val="${!name}"
+            if [ -z "$val" ]; then
+              echo "::error::Repository Actions secret '$name' is not set or is empty."
+              echo "::error::Add it under Settings → Secrets and variables → Actions (same values as Vercel)."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Required secrets present (values not shown)."
 
       - name: Install dependencies
         run: npm ci
