@@ -251,52 +251,151 @@ interface SyncResult {
   message?: string;
 }
 
-// First, let's get all products and find by SKU
-async function findShopifyProductBySku(client: ReturnType<typeof createAdminApiClient>, sku: string, locationId: string) {
-  try {
-    // Keep the working authentication test
-    const authTest = await client.request(`
-      query {
-        shop {
-          name
+type ShopifySkuLookup = {
+  productId: string;
+  variantId: string;
+  inventoryItemId: string;
+  locationId: string;
+  currentInventory: number;
+  title?: string;
+  quantities: Record<string, number>;
+};
+
+function quantitiesToMap(quantities: { name: string; quantity: number }[] | undefined) {
+  return (quantities ?? []).reduce((acc: Record<string, number>, q) => {
+    acc[q.name] = q.quantity;
+    return acc;
+  }, {});
+}
+
+/** When inventoryLevel(locationId) is null, find the level by scanning all levels for this item. */
+async function getInventoryLevelAtLocation(
+  client: ReturnType<typeof createAdminApiClient>,
+  inventoryItemId: string,
+  locationGid: string
+): Promise<{ quantities: Record<string, number>; locationId: string } | null> {
+  const q = `
+    query InvItemLevels($id: ID!) {
+      inventoryItem(id: $id) {
+        inventoryLevels(first: 50) {
+          edges {
+            node {
+              quantities(names: ["available", "on_hand", "committed", "incoming"]) {
+                name
+                quantity
+              }
+              location {
+                id
+                name
+              }
+            }
+          }
         }
       }
-    `);
-
-    if (authTest.errors) {
-      throw new Error('Authentication test failed');
     }
+  `;
+  const res = await client.request(q, { variables: { id: inventoryItemId } });
+  const edges = res.data?.inventoryItem?.inventoryLevels?.edges ?? [];
+  for (const edge of edges) {
+    const node = edge?.node;
+    const locId = node?.location?.id;
+    if (locId === locationGid) {
+      return {
+        quantities: quantitiesToMap(node?.quantities),
+        locationId: locId,
+      };
+    }
+  }
+  return null;
+}
 
-    console.log('Authentication successful, proceeding with product lookup');
+/**
+ * Resolve variant + inventory at location. Returns null if SKU is not in this store
+ * or inventory is not activated at the configured location.
+ */
+async function findShopifyProductBySku(
+  client: ReturnType<typeof createAdminApiClient>,
+  sku: string,
+  locationId: string
+): Promise<ShopifySkuLookup | null> {
+  const authTest = await client.request(`
+    query {
+      shop {
+        name
+      }
+    }
+  `);
 
-    // Normalize location ID to GID format for the query
-    const normalizedLocationId = normalizeLocationId(locationId);
-    
-    // First find the inventory item ID using SKU
-    const findInventoryItemQuery = `
-      query {
-        inventoryItems(first: 1, query: "sku:${sku}") {
+  if (authTest.errors) {
+    throw new Error('Authentication test failed');
+  }
+
+  console.log('Authentication successful, proceeding with product lookup');
+
+  const normalizedLocationId = normalizeLocationId(locationId);
+  const skuQuery = `sku:${sku}`;
+
+  const inventoryItemsQuery = `
+    query FindBySku($q: String!, $locationId: ID!) {
+      inventoryItems(first: 1, query: $q) {
+        nodes {
+          id
+          variant {
+            id
+            sku
+            product {
+              id
+              title
+            }
+            inventoryItem {
+              id
+              inventoryLevel(locationId: $locationId) {
+                id
+                quantities(names: ["available", "on_hand", "committed", "incoming"]) {
+                  name
+                  quantity
+                }
+                location {
+                  id
+                  name
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const inventoryResponse = await client.request(inventoryItemsQuery, {
+    variables: { q: skuQuery, locationId: normalizedLocationId },
+  });
+  console.log('Inventory Item Response:', JSON.stringify(inventoryResponse, null, 2));
+
+  let variant = inventoryResponse.data?.inventoryItems?.nodes?.[0]?.variant;
+
+  if (!variant?.inventoryItem?.id) {
+    const variantFallbackQuery = `
+      query VariantsBySku($q: String!, $locationId: ID!) {
+        productVariants(first: 1, query: $q) {
           nodes {
             id
-            variant {
+            sku
+            product {
               id
-              sku
-              product {
+              title
+            }
+            inventoryItem {
+              id
+              inventoryLevel(locationId: $locationId) {
                 id
-                title
-              }
-              inventoryItem {
-                id
-                inventoryLevel(locationId: "${normalizedLocationId}") {
+                quantities(names: ["available", "on_hand", "committed", "incoming"]) {
+                  name
+                  quantity
+                }
+                location {
                   id
-                  quantities(names: ["available", "on_hand", "committed", "incoming"]) {
-                    name
-                    quantity
-                  }
-                  location {
-                    id
-                    name
-                  }
+                  name
                 }
               }
             }
@@ -304,47 +403,58 @@ async function findShopifyProductBySku(client: ReturnType<typeof createAdminApiC
         }
       }
     `;
-
-    const inventoryResponse = await client.request(findInventoryItemQuery);
-    console.log('Inventory Item Response:', JSON.stringify(inventoryResponse, null, 2));
-
-    const inventoryItem = inventoryResponse.data?.inventoryItems?.nodes[0];
-    if (!inventoryItem?.variant) {
-      throw new Error(`No inventory item found with SKU: ${sku}`);
-    }
-
-    const inventoryLevel = inventoryItem.variant.inventoryItem.inventoryLevel;
-    if (!inventoryLevel) {
-      throw new Error(`No inventory level found for location: ${locationId}`);
-    }
-
-    // Get the quantities from the response
-    const quantities = inventoryLevel.quantities.reduce((acc: any, q: any) => {
-      acc[q.name] = q.quantity;
-      return acc;
-    }, {});
-
-    // Use the location ID from the API response (already in GID format)
-    // Prefer the API response location ID, fallback to normalized input location ID
-    const finalLocationId = inventoryLevel.location?.id || normalizedLocationId;
-
-    return {
-      productId: inventoryItem.variant.product.id,
-      variantId: inventoryItem.variant.id,
-      inventoryItemId: inventoryItem.variant.inventoryItem.id,
-      locationId: finalLocationId, // Use location ID from API response (already in GID format)
-      currentInventory: quantities.on_hand || quantities.available || 0,
-      title: inventoryItem.variant.product.title,
-      quantities
-    };
-
-  } catch (error) {
-    console.error('Error finding product by SKU:', error);
-    if (error instanceof Error) {
-      console.error('Error details:', error.message);
-    }
-    throw error;
+    const pvResponse = await client.request(variantFallbackQuery, {
+      variables: { q: skuQuery, locationId: normalizedLocationId },
+    });
+    console.log('Product variant fallback response:', JSON.stringify(pvResponse, null, 2));
+    variant = pvResponse.data?.productVariants?.nodes?.[0];
   }
+
+  if (!variant?.inventoryItem?.id) {
+    console.log(
+      `[Shopify] No product/variant with SKU "${sku}" in this store (or SKU not searchable). Skip sync for this store.`
+    );
+    return null;
+  }
+
+  let inventoryLevel = variant.inventoryItem.inventoryLevel;
+
+  if (!inventoryLevel) {
+    const resolved = await getInventoryLevelAtLocation(
+      client,
+      variant.inventoryItem.id,
+      normalizedLocationId
+    );
+    if (!resolved) {
+      console.log(
+        `[Shopify] SKU "${sku}" exists but has no inventory at location ${normalizedLocationId}. Activate this location for the variant in Shopify admin.`
+      );
+      return null;
+    }
+    const quantities = resolved.quantities;
+    return {
+      productId: variant.product.id,
+      variantId: variant.id,
+      inventoryItemId: variant.inventoryItem.id,
+      locationId: resolved.locationId,
+      currentInventory: quantities.on_hand ?? quantities.available ?? 0,
+      title: variant.product.title,
+      quantities,
+    };
+  }
+
+  const quantities = quantitiesToMap(inventoryLevel.quantities);
+  const finalLocationId = inventoryLevel.location?.id || normalizedLocationId;
+
+  return {
+    productId: variant.product.id,
+    variantId: variant.id,
+    inventoryItemId: variant.inventoryItem.id,
+    locationId: finalLocationId,
+    currentInventory: quantities.on_hand ?? quantities.available ?? 0,
+    title: variant.product.title,
+    quantities,
+  };
 }
 
 // Update inventory levels in Shopify
@@ -452,12 +562,12 @@ export async function syncInventoryWithShopify(
     );
     
     if (!shopifyProduct) {
-      console.log(`No Shopify product found for SKU: ${product.sku}`);
       return {
         sku: product.sku,
         store: storeIdentifier,
         success: false,
-        error: 'Product not found in Shopify'
+        error:
+          'SKU not in this store catalog, or inventory is not activated at the configured warehouse location',
       };
     }
 
