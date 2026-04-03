@@ -22,7 +22,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         results.updated++;
       } catch (error) {
         results.failed++;
-        results.errors.push(`SKU ${product.sku}: ${error.message}`);
+        const msg = error instanceof Error ? error.message : String(error);
+        results.errors.push(`SKU ${product.sku}: ${msg}`);
       }
     }
 
@@ -33,10 +34,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     return res.status(500).json({
       success: false,
       message: 'Update failed',
-      error: error.message
+      error: message
     });
   }
 } 

@@ -33,7 +33,9 @@ interface UpdateData {
   };
 }
 
-export async function getProductBySkuAdmin(sku: string) {
+export async function getProductBySkuAdmin(
+  sku: string
+): Promise<(Product & { id: string }) | null> {
   try {
     const snapshot = await adminDb
       .collection('products')
@@ -43,7 +45,7 @@ export async function getProductBySkuAdmin(sku: string) {
 
     if (snapshot.empty) return null;
     const doc = snapshot.docs[0];
-    return { id: doc.id, ...doc.data() };
+    return { id: doc.id, ...doc.data() } as Product & { id: string };
   } catch (error) {
     console.error('Error getting product by SKU:', error);
     throw error;
@@ -98,7 +100,8 @@ export async function testSkuLookup(sku: string) {
     return results;
   } catch (error) {
     console.error('Error in SKU lookup test:', error);
-    throw new Error(`SKU lookup failed: ${error.message}`);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`SKU lookup failed: ${message}`);
   }
 }
 
@@ -176,9 +179,10 @@ export async function upsertProductFromCsvAdmin(productData: Partial<Product>) {
     }
 
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error('CSV Import Error:', {
       sku: productData.sku,
-      error: error.message
+      error: message
     });
     throw error;
   }
@@ -239,9 +243,10 @@ export async function updateExistingProductBySku(productData: Partial<Product>) 
     };
 
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error('Update Failed:', {
       sku: productData.sku,
-      error: error.message
+      error: message
     });
     throw error;
   }

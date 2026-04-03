@@ -1,6 +1,6 @@
 // Product Types
 
-## NEW TYPES (Added for variantId support) ##
+// NEW TYPES (Added for variantId support)
 export type ShopifyProductInfo = {
   productId: string;
   variantId: string;  // This was missing in your implementation
@@ -12,9 +12,8 @@ export type ShopifyProducts = {
   nakedArmor?: ShopifyProductInfo;
   grownManShave?: ShopifyProductInfo;
 };
-## END NEW TYPES ##
 
-## CURRENT WORKING TYPE ##
+// CURRENT WORKING TYPE
 export type Product = {
   id?: string;
   sku: string;
@@ -54,7 +53,7 @@ export type Product = {
   createdAt: any; // Firestore Timestamp
 };
 
-## ORIGINAL WORKING TYPE (Keep for reference) ##
+// ORIGINAL WORKING TYPE (Keep for reference)
 /*
 export type Product = {
   id?: string;
@@ -93,7 +92,6 @@ export type Product = {
   createdAt: any; // Firestore Timestamp
 };
 */
-## END ORIGINAL TYPE ##
 
 // Warehouse Location Types
 export interface Location {

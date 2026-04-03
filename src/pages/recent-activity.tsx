@@ -1,15 +1,9 @@
 import { useState, useEffect } from 'react';
-import { getRecentActivity } from '@/lib/db';
+import { getRecentActivity, type RecentActivityRow } from '@/lib/db';
 import { formatDistanceToNow } from 'date-fns';
 
 export default function RecentActivityPage() {
-  const [activities, setActivities] = useState<Array<{
-    id: string;
-    type: 'webhook' | 'cron' | 'inventory';
-    timestamp: Date;
-    description: string;
-    status: 'success' | 'error' | 'running';
-  }>>([]);
+  const [activities, setActivities] = useState<RecentActivityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [limit, setLimit] = useState(50);
 
@@ -39,6 +33,8 @@ export default function RecentActivityPage() {
         return '🔄';
       case 'cron':
         return '⚡';
+      case 'product':
+        return '🏷️';
       default:
         return '•';
     }

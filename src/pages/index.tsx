@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getAllProducts, getSyncStatus, type StoreSync, getSectionCounts, getRecentActivity, getPerformanceMetrics } from '@/lib/db';
+import { getAllProducts, getSyncStatus, type StoreSync, getSectionCounts, getRecentActivity, getPerformanceMetrics, type RecentActivityRow } from '@/lib/db';
 import { onSnapshot, doc, Timestamp, query, collection, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Product } from '@/types';
@@ -17,13 +17,7 @@ export default function Dashboard() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<StoreSync | null>(null);
-  const [recentActivity, setRecentActivity] = useState<Array<{
-    id: string;
-    type: 'webhook' | 'cron' | 'inventory';
-    timestamp: Date;
-    description: string;
-    status: 'success' | 'error' | 'running';
-  }>>([]);
+  const [recentActivity, setRecentActivity] = useState<RecentActivityRow[]>([]);
   const [sectionCounts, setSectionCounts] = useState({
     joy: 0,
     love: 0,
@@ -392,10 +386,12 @@ export default function Dashboard() {
             <div key={activity.id} className="flex items-center space-x-4 py-2 border-b last:border-0">
               <span className={`p-2 rounded-full ${
                 activity.type === 'webhook' ? 'bg-purple-100' :
-                activity.type === 'cron' ? 'bg-blue-100' : 'bg-green-100'
+                activity.type === 'cron' ? 'bg-blue-100' :
+                activity.type === 'product' ? 'bg-amber-100' : 'bg-green-100'
               }`}>
                 {activity.type === 'webhook' ? '🔔' :
-                 activity.type === 'cron' ? '⏰' : '📦'}
+                 activity.type === 'cron' ? '⏰' :
+                 activity.type === 'product' ? '🏷️' : '📦'}
               </span>
               <div className="flex-grow">
                 <p className="text-sm font-medium">{activity.description}</p>

@@ -27,10 +27,6 @@ const nakedArmorClient = createAdminApiClient({
   storeDomain: process.env.SHOPIFY_STORE_ONE_URL || '',
   accessToken: process.env.SHOPIFY_STORE_ONE_ACCESS_TOKEN || '',
   apiVersion: '2025-10',
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Shopify-Access-Token': process.env.SHOPIFY_STORE_ONE_ACCESS_TOKEN || ''
-  }
 });
 
 // Add Grown Man Shave client alongside existing Naked Armor client
@@ -38,10 +34,6 @@ const grownManShaveClient = createAdminApiClient({
   storeDomain: process.env.SHOPIFY_STORE_TWO_URL || '',
   accessToken: process.env.SHOPIFY_STORE_TWO_ACCESS_TOKEN || '',
   apiVersion: '2025-10',
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Shopify-Access-Token': process.env.SHOPIFY_STORE_TWO_ACCESS_TOKEN || ''
-  }
 });
 
 // Helper function to normalize location ID to GID format
@@ -92,10 +84,6 @@ function getClientForStore(storeIdentifier: ShopifyStore) {
       storeDomain: process.env.SHOPIFY_STORE_ONE_URL,
       accessToken: process.env.SHOPIFY_STORE_ONE_ACCESS_TOKEN,
       apiVersion: '2025-10',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': process.env.SHOPIFY_STORE_ONE_ACCESS_TOKEN
-      }
     });
   }
   
@@ -111,10 +99,6 @@ function getClientForStore(storeIdentifier: ShopifyStore) {
       storeDomain: process.env.SHOPIFY_STORE_TWO_URL,
       accessToken: process.env.SHOPIFY_STORE_TWO_ACCESS_TOKEN,
       apiVersion: '2025-10',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': process.env.SHOPIFY_STORE_TWO_ACCESS_TOKEN
-      }
     });
   }
 

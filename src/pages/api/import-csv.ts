@@ -76,9 +76,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   } catch (error) {
     console.error('Import error:', error);
+    const message = error instanceof Error ? error.message : String(error);
     return res.status(500).json({
       success: false,
-      message: error.message
+      message
     });
   }
 } 

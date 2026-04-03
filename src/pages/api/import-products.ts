@@ -1,6 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { addProduct } from '@/lib/db';
-import { serverTimestamp } from 'firebase/firestore';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -26,11 +25,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         throw new Error('SKU is required for import');
       }
 
+      const status: 'active' | 'inactive' =
+        product.status?.toLowerCase() === 'inactive' ? 'inactive' : 'active';
+
       const newProduct = {
         sku: product.sku,
         productName: product.productName || product.ProductName,
         description: product.description || product.Description || '',
-        status: product.status?.toLowerCase() === 'inactive' ? 'inactive' : 'active',
+        status,
         // Primary Location
         location: {
           loc1: product.location?.loc1 || '',
@@ -40,13 +42,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         },
         onHand: parseInt(product.onHand || product.OnHand) || 0,
         // Secondary Location
-        location2: product.location2 ? {
-          loc1: product.location2.loc1 || '',
-          loc2: product.location2.loc2 || '',
-          loc3: product.location2.loc3 || '',
-          loc4: product.location2.loc4 || '',
-          onHand: parseInt(product.location2.onHand) || 0
-        } : null,
+        location2: product.location2
+          ? {
+              loc1: product.location2.loc1 || '',
+              loc2: product.location2.loc2 || '',
+              loc3: product.location2.loc3 || '',
+              loc4: product.location2.loc4 || '',
+              onHand: parseInt(product.location2.onHand) || 0
+            }
+          : undefined,
         // Initialize Shopify configurations
         shopifyProducts: {
           nakedArmor: {
@@ -61,9 +65,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             inventoryItemId: '',
             locationId: process.env.SHOPIFY_STORE_TWO_LOCATION_ID || ''
           }
-        },
-        lastUpdated: serverTimestamp(),
-        createdAt: serverTimestamp()
+        }
       };
 
       console.log('Formatted new product:', {
@@ -92,9 +94,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   } catch (error) {
     console.error('Import error:', error);
+    const message = error instanceof Error ? error.message : String(error);
     return res.status(500).json({
       success: false,
-      message: error.message
+      message
     });
   }
 } 

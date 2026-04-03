@@ -1,5 +1,4 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { recordWebhookEvent } from '@/lib/db';
 import { verifyShopifyWebhook } from '@/lib/shopify';
 import { adminDb } from '@/lib/firebase-admin';
 
@@ -44,8 +43,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const previousQuantity = productData.onHand;
 
     // Record the webhook event
-    await recordWebhookEvent({
+    await adminDb.collection('webhook_events').add({
       timestamp: new Date(),
+      processedAt: new Date(),
       store: store === 'naked-armor' ? 'nakedArmor' : 'grownManShave',
       eventType: 'inventory_update',
       status: 'success',
@@ -75,8 +75,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.error('Webhook processing error:', error);
     
     // Record the error event
-    await recordWebhookEvent({
+    await adminDb.collection('webhook_events').add({
       timestamp: new Date(),
+      processedAt: new Date(),
       store: store === 'naked-armor' ? 'nakedArmor' : 'grownManShave',
       eventType: 'inventory_update',
       status: 'error',

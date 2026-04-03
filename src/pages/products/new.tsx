@@ -20,11 +20,13 @@ export default function NewProduct() {
     shopifyProducts: {
       nakedArmor: {
         productId: '',
+        variantId: '',
         inventoryItemId: '',
         locationId: ''
       },
       grownManShave: {
         productId: '',
+        variantId: '',
         inventoryItemId: '',
         locationId: ''
       }

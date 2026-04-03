@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { Product } from '@/types';
+
+type ShopifyStoreConfig = Product['shopifyProducts']['nakedArmor'];
 import Modal from './Modal';
 
 interface ProductEditModalProps {
@@ -33,11 +35,13 @@ export default function ProductEditModal({ product, isOpen, onClose, onSave }: P
       shopifyProducts: {
         nakedArmor: {
           productId: '',
+          variantId: '',
           inventoryItemId: '',
           locationId: process.env.NEXT_PUBLIC_SHOPIFY_STORE_ONE_LOCATION_ID || ''
         },
         grownManShave: {
           productId: '',
+          variantId: '',
           inventoryItemId: '',
           locationId: process.env.NEXT_PUBLIC_SHOPIFY_STORE_TWO_LOCATION_ID || ''
         }
@@ -95,19 +99,40 @@ export default function ProductEditModal({ product, isOpen, onClose, onSave }: P
 
   const handleShopifyConfigChange = (
     store: 'nakedArmor' | 'grownManShave',
-    field: string,
+    field: keyof ShopifyStoreConfig,
     value: string
   ) => {
-    setFormData(prev => ({
-      ...prev,
-      shopifyProducts: {
-        ...prev.shopifyProducts,
-        [store]: {
-          ...prev.shopifyProducts?.[store],
-          [field]: value
-        }
-      }
-    }));
+    setFormData((prev): Partial<Product> => {
+      const existing = prev.shopifyProducts?.[store];
+      const updated: ShopifyStoreConfig = {
+        productId: existing?.productId ?? '',
+        variantId: existing?.variantId ?? '',
+        inventoryItemId: existing?.inventoryItemId ?? '',
+        ...existing,
+        [field]: field === 'locationId' ? value || undefined : value,
+      };
+      const base: Product['shopifyProducts'] = {
+        nakedArmor: prev.shopifyProducts?.nakedArmor ?? {
+          productId: '',
+          variantId: '',
+          inventoryItemId: '',
+          locationId: '',
+        },
+        grownManShave: prev.shopifyProducts?.grownManShave ?? {
+          productId: '',
+          variantId: '',
+          inventoryItemId: '',
+          locationId: '',
+        },
+      };
+      return {
+        ...prev,
+        shopifyProducts: {
+          ...base,
+          [store]: updated,
+        },
+      };
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

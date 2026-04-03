@@ -35,6 +35,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const rawBody = JSON.stringify(testOrder);
     const secret = process.env.SHOPIFY_STORE_ONE_WEBHOOK_SECRET;
+    if (!secret) {
+      return res.status(500).json({ success: false, error: 'SHOPIFY_STORE_ONE_WEBHOOK_SECRET is not configured' });
+    }
 
     // Calculate HMAC
     const hmac = crypto
@@ -48,7 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       headers: {
         'Content-Type': 'application/json',
         'X-Shopify-Topic': 'orders/create',
-        'X-Shopify-Shop-Domain': process.env.SHOPIFY_STORE_ONE_URL,
+        'X-Shopify-Shop-Domain': process.env.SHOPIFY_STORE_ONE_URL ?? '',
         'X-Shopify-Hmac-SHA256': hmac,
         'X-Shopify-Test': 'true'
       },
@@ -73,10 +76,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   } catch (error) {
     console.error('Test webhook error:', error);
+    const err = error instanceof Error ? error : new Error(String(error));
     res.status(500).json({ 
       success: false, 
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
   }
 } 

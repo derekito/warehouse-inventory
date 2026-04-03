@@ -64,7 +64,7 @@ export async function getAllProducts(): Promise<Product[]> {
   return querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }) as Product);
 }
 
-export async function addProduct(productData: Omit<Product, 'id' | 'createdAt' | 'userId'>) {
+export async function addProduct(productData: Omit<Product, 'id' | 'createdAt' | 'userId' | 'lastUpdated'>) {
   try {
     const user = auth.currentUser;
     if (!user) throw new Error('User must be logged in to add a product');
@@ -680,7 +680,8 @@ export async function getErrorRates(days = 7): Promise<{
   }));
   
   // Group by type and calculate rates
-  const errorsByType = errors.reduce((acc, error) => {
+  const errorsByType = errors.reduce((acc, raw) => {
+    const error = raw as { type?: string; status?: string };
     const type = error.type || 'unknown';
     if (!acc[type]) {
       acc[type] = { total: 0, errors: 0 };
@@ -736,8 +737,20 @@ export async function getSectionCounts() {
   };
 }
 
+function toActivityStatus(s: unknown): 'success' | 'error' | 'running' {
+  return s === 'success' || s === 'error' || s === 'running' ? s : 'success';
+}
+
+export type RecentActivityRow = {
+  id: string;
+  type: 'webhook' | 'cron' | 'inventory' | 'product';
+  timestamp: Date;
+  description: string;
+  status: 'success' | 'error' | 'running';
+};
+
 // Add this function to get recent activity
-export async function getRecentActivity(limitCount = 50) {
+export async function getRecentActivity(limitCount = 50): Promise<RecentActivityRow[]> {
   try {
     // Get recent webhooks
     const webhookQuery = query(
@@ -781,28 +794,28 @@ export async function getRecentActivity(limitCount = 50) {
           type: 'webhook' as const,
           timestamp: doc.data().timestamp?.toDate() || new Date(),
           description: `Received ${doc.data().eventType || 'webhook'} from ${doc.data().store || 'unknown'}`,
-          status: doc.data().status || 'success'
+          status: toActivityStatus(doc.data().status)
         })),
         ...cronJobs.docs.map(doc => ({
           id: doc.id,
           type: 'cron' as const,
           timestamp: doc.data().timestamp?.toDate() || new Date(),
           description: `${doc.data().type || 'Sync'} job ${doc.data().status === 'success' ? 'completed' : 'failed'}`,
-          status: doc.data().status || 'success'
+          status: toActivityStatus(doc.data().status)
         })),
         ...inventoryUpdates.docs.map(doc => ({
           id: doc.id,
           type: 'inventory' as const,
           timestamp: doc.data().timestamp?.toDate() || new Date(),
           description: `Manual stock adjustment: SKU ${doc.data().productSku} (${doc.data().quantity > 0 ? '+' : ''}${doc.data().quantity})`,
-          status: 'success'
+          status: 'success' as const
         })),
         ...products.docs.map(doc => ({
           id: doc.id,
           type: 'product' as const,
           timestamp: doc.data().lastUpdated?.toDate() || doc.data().createdAt?.toDate() || new Date(),
           description: `Product ${doc.data().sku} ${doc.data().createdAt ? 'created' : 'updated'}`,
-          status: 'success'
+          status: 'success' as const
         }))
       ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
        .slice(0, limitCount);

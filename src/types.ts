@@ -1,3 +1,5 @@
+import type { Timestamp } from 'firebase/firestore';
+
 export interface Product {
   id: string;
   sku: string;
@@ -35,6 +37,13 @@ export interface Product {
       locationId?: string;
     };
   };
+}
+
+export interface ShopifyInventoryUpdate {
+  inventory_item_id: string;
+  location_id: string;
+  available: number;
+  updated_at: string;
 }
 
 export interface WebhookEvent {

@@ -63,6 +63,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   } catch (error) {
     console.error('[WEBHOOK] Error processing webhook:', error);
+    const errMsg = error instanceof Error ? error.message : String(error);
     
     try {
       const webhookCollection = db.collection('webhook_events');
@@ -73,7 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                    topic === 'refunds/create' ? 'refund' : 'other',
         payload,
         status: 'error',
-        error: error.message,
+        error: errMsg,
         timestamp: new Date(),
         processedAt: new Date()
       });
