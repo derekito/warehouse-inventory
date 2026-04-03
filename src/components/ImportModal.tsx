@@ -25,11 +25,12 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
       if (!response.ok) throw new Error(data.message);
 
       setResults(data.results);
-      toast({
-        title: 'Import Complete',
-        description: `Created: ${data.results.created}, Updated: ${data.results.updated}, Failed: ${data.results.failed}`,
-        variant: data.results.failed > 0 ? 'warning' : 'success'
-      });
+      const summaryMsg = `Import Complete — Created: ${data.results.created}, Updated: ${data.results.updated}, Failed: ${data.results.failed}`;
+      if (data.results.failed > 0) {
+        toast(summaryMsg, { icon: '⚠️' });
+      } else {
+        toast.success(summaryMsg);
+      }
 
       if (data.results.errors.length > 0) {
         console.error('Import errors:', data.results.errors);
@@ -39,11 +40,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('Import error:', error);
-      toast({
-        title: 'Import Failed',
-        description: message,
-        variant: 'destructive'
-      });
+      toast.error(`Import Failed — ${message}`);
     } finally {
       setImporting(false);
     }
