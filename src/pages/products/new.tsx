@@ -45,13 +45,19 @@ export default function NewProduct() {
     const { name, value } = e.target;
     if (name.startsWith('location.')) {
       const [_, field] = name.split('.');
-      setFormData(prev => ({
-        ...prev,
-        location: {
-          ...prev.location,
-          [field]: value
-        }
-      }));
+      setFormData(prev => {
+        const base = {
+          loc1: prev.location?.loc1 ?? '',
+          loc2: prev.location?.loc2 ?? '',
+          loc3: prev.location?.loc3 ?? '',
+          loc4: prev.location?.loc4 ?? ''
+        };
+        (base as Record<'loc1'|'loc2'|'loc3'|'loc4', string>)[field as 'loc1'|'loc2'|'loc3'|'loc4'] = String(value ?? '');
+        return {
+          ...prev,
+          location: base
+        };
+      });
     } else {
       setFormData(prev => ({
         ...prev,
