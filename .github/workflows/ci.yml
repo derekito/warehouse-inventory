@@ -1,4 +1,10 @@
 # Verifies `npm run build` on push/PR. Production deploy: Vercel.
+#
+# GitHub Actions does NOT read Vercel environment variables. To make this job pass,
+# create the same names under: Repo Settings → Secrets and variables → Actions.
+# Your client bundle needs NEXT_PUBLIC_* secrets (see src/lib/firebase.ts); server/admin
+# needs FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY. Values match Firebase / Vercel.
+#
 # See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
 name: CI
 
@@ -47,29 +53,6 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-
-      - name: Check required Actions secrets (fail with hint if missing)
-        shell: bash
-        run: |
-          missing=0
-          for name in \
-            NEXT_PUBLIC_FIREBASE_API_KEY \
-            NEXT_PUBLIC_FIREBASE_PROJECT_ID \
-            FIREBASE_CLIENT_EMAIL \
-            FIREBASE_PRIVATE_KEY \
-            FIREBASE_PROJECT_ID
-          do
-            val="${!name}"
-            if [ -z "$val" ]; then
-              echo "::error::Repository Actions secret '$name' is not set or is empty."
-              echo "::error::Add it under Settings → Secrets and variables → Actions (same values as Vercel)."
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
-          echo "Required secrets present (values not shown)."
 
       - name: Install dependencies
         run: npm ci
