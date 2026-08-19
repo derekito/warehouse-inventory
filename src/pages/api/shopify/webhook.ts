@@ -82,7 +82,7 @@ async function logWebhookEvent(payload: {
             orderId: payload.result.orderId,
             orderNumber: payload.result.orderNumber,
           },
-          error: payload.error,
+          ...(payload.error !== undefined && { error: payload.error }),
           timestamp: new Date(),
           processedAt: new Date(),
         }),
