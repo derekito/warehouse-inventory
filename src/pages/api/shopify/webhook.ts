@@ -151,9 +151,15 @@ async function processOrder(
     }
 
     try {
+      const lookupStarted = Date.now();
       webhookLog('Looking up warehouse product by SKU', { sku, quantitySold: quantity });
 
       const product = await getProductBySkuAdmin(sku);
+      webhookLog('SKU lookup finished', {
+        sku,
+        found: Boolean(product),
+        durationMs: Date.now() - lookupStarted,
+      });
       if (!product) {
         webhookLog('SKU not in warehouse database — no inventory change', {
           sku,
@@ -271,6 +277,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const isTest = req.headers['x-shopify-test'] === 'true';
 
   try {
+    const startedAt = Date.now();
     const rawBody = await getRawBody(req);
     const hmac = req.headers['x-shopify-hmac-sha256'] as string;
 
@@ -311,6 +318,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     webhookLog('Responding to Shopify', {
       success: responseBody.success,
       summary: result.summary,
+      durationMs: Date.now() - startedAt,
     });
 
     return res.status(200).json(responseBody);

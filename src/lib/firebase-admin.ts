@@ -13,7 +13,10 @@ if (!getApps().length) {
 
 export const adminDb = getFirestore();
 
-// Test the connection
-adminDb.collection('products').limit(1).get()
-  .then(() => console.log('Firebase Admin connection test successful'))
-  .catch(error => console.error('Firebase Admin connection test failed:', error)); 
+// Prefer REST over gRPC on Vercel/serverless — fewer hung connections and
+// clearer failures. Must run before any Firestore reads/writes.
+try {
+  adminDb.settings({ preferRest: true, ignoreUndefinedProperties: true });
+} catch {
+  // settings() throws if already called (hot reload / warm instance)
+}
